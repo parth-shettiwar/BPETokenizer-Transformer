@@ -1,0 +1,39 @@
+Problem (unicode1): Understanding Unicode (1 point)
+(a) What Unicode character does chr(0) return?
+'\x00'
+(b) How does this character’s string representation (__repr__()) differ from its printed representation?
+'\x00' vs Null character
+(c) What happens when this character occurs in text? It may be helpful to play around with the
+following in your Python interpreter and see if it matches your expectations:
+>>> chr(0)
+>>> print(chr(0))
+>>> "this is a test" + chr(0) + "string"
+>>> print("this is a test" + chr(0) + "string")
+string representation
+'this is a test\x00string'
+Print: 
+this is a teststring
+
+Problem (unicode2): Unicode Encodings
+What are some reasons to prefer training our tokenizer on UTF-8 encoded bytes, rather than
+UTF-16 or UTF-32? It may be helpful to compare the output of these encodings for various
+input strings.
+Answer:
+UTF-8 is more space efficient for texts that are primarily in ASCII, as it uses one byte for
+ASCII characters, while UTF-16 and UTF-32 use two and four bytes respectively. UTF-8 is also
+backward compatible with ASCII, making it easier to handle legacy systems. Additionally, UTF-8 is widely used on the web and in many programming languages, making it a more practical choice for interoperability.
+
+Consider the following (incorrect) function, which is intended to decode a UTF-8 byte string into
+a Unicode string. Why is this function incorrect? Provide an example of an input byte string
+that yields incorrect results.
+def decode_utf8_bytes_to_str_wrong(bytestring: bytes):
+return "".join([bytes([b]).decode("utf-8") for b in bytestring])
+Answer:
+こ
+The function is incorrect because it decodes each byte separately as its own UTF-8 sequence instead of decoding the full byte string at once, so any character encoded with multiple UTF-8 bytes (like é) will cause a UnicodeDecodeError or incorrect characters instead of the intended single Unicode character.
+
+(c) Give a two byte sequence that does not decode to any Unicode character(s).
+Answer:
+b'\xe3\x81'
+list(b'\xe3\x81') = [227, 129]
+The byte 0xE3 indicates the start of a 3-byte UTF-8 character, which must be followed by two continuation bytes. However, in the sequence b'\xe3\x81', there is only one following byte, and although 0x81 is a valid continuation byte, the sequence is still incomplete because a third continuation byte is missing. Since UTF-8 does not allow truncated or partial multi-byte characters, this 2-byte sequence cannot be decoded into any valid Unicode character and will always raise a decode error.
