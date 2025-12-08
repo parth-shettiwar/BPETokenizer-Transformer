@@ -319,34 +319,3 @@ class Tokenizer:
         except KeyError:
             raise ValueError(f"Token IDs not in vocabulary.")
 
-if __name__ == '__main__':
-
-    # input_path = "./data/TinyStoriesV2-GPT4-valid.txt"
-    # vocab_size = 10000
-    # special_tokens = ["<|endoftext|>"]
-    # trainer = BPETrainer(input_path, vocab_size, special_tokens)
-    # vocab, merges = trainer.train_bpe(
-    #     input_path=input_path,
-    #     vocab_size=vocab_size,
-    #     special_tokens=special_tokens,
-    # )
-    # print("Final Vocab size:", len(vocab))
-    # print("Final Merges size:", len(merges))
-
-
-    # # test Tokenizer.from_files
-    # FIXTURES_PATH = "/Users/pshettiw/Documents/Courses/CS336/BPETokenizer/tests/fixtures"
-    # VOCAB_PATH = FIXTURES_PATH + "/gpt2_vocab.json"
-    # MERGES_PATH = FIXTURES_PATH + "/gpt2_merges.txt"
-    # tokenizer = Tokenizer.from_files(VOCAB_PATH, MERGES_PATH, special_tokens=["<|endoftext|>"])
-    # print("Tokenizer loaded from files.")
-    # print("Vocab size:", len(tokenizer.vocab))
-    # print("First 10 vocab items:", list(tokenizer.vocab.items())[:10])
-    # print("Merges size:", len(tokenizer.merges))
-    # print("First 10 merges:", tokenizer.merges[:10])
-
-
-    # text = "s"
-    # token_ids = tokenizer.encode(text)
-    # print("Encoded token IDs for text:", text)
-    # print(token_ids)
