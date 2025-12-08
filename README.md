@@ -1,5 +1,5 @@
-# Byte Pair Encoding
-In this repo, I write a quick optimized implementation of standard BPE algorithm. The task was adopted from the stanford course: CS336 assignment
+# Byte Pair Encoding and Transformer
+In this repo, I write a quick optimized implementation of standard BPE algorithm and Transformer architecture. The task was adopted from the stanford course: CS336 assignment
 [cs336_spring2025_assignment1_basics.pdf](./cs336_spring2025_assignment1_basics.pdf)
 
 ## Setup
