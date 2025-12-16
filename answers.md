@@ -87,5 +87,5 @@ As we increase model size, attention flops and AV sum component start decreasing
 forward pass change? How do the relative contribution of FLOPs of the model components
 change?
 FLOPs increase by 33x
-![alt text](./Images/gpt_flops_context.png)
+![alt text](./Images/context_length_gpt.png)
 As we increase context length, the QKV projections and other linear projections contribution decrease and attention scoring increases a lot. This is owing to L² growth for attention scoring.
