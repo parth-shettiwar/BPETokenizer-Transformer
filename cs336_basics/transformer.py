@@ -191,14 +191,6 @@ def scaled_dot_product_attention(
     attention = softmax(scores, dim=-1)
     return torch.einsum("...qk,...kv->...qv", attention, value)
 
-"""
-Implement causal multi-head self-attention as a torch.nn.Module. Your implemen-
-tation should accept (at least) the following parameters:
-d_model: int Dimensionality of the Transformer block inputs.
-num_heads: int Number of heads to use in multi-head self-attention.
-Folllowing Vaswani et al. [2017], set dk = dv = dmodel/h
-Use causal masking in the attention computation.
-"""
 class MultiHeadSelfAttention(torch.nn.Module):
     def __init__(self, d_model: int, num_heads: int, theta: float | None = None, token_positions: torch.Tensor | None = None) -> None:
         super().__init__()
@@ -254,20 +246,6 @@ class TransformerBlock(torch.nn.Module):
         x = x + ffn_output
         return x
     
-"""
-Time to put it all together! Implement the Transformer language model as described in §3.1
-and illustrated in Figure 1. At minimum, your implementation should accept all the aforementioned
-construction parameters for the Transformer block, as well as these additional parameters:
-vocab_size: embedding matrix.
-int The size of the vocabulary, necessary for determining the dimensionality of the token
-context_length: int The maximum context length, necessary for determining the dimensionality of
-the position embedding matrix.
-num_layers: int The number of Transformer blocks to use.
-To test your implementation against our provided tests, you will first need to implement the test
-adapter at [adapters.run_transformer_lm]. Then, run uv run pytest -k test_transformer_lm
-to test your implementation.
-Deliverable: A Transformer LM module that passes the above tests.
-"""
 
 class TransformerLM(torch.nn.Module):
     def __init__(self, vocab_size: int, context_length: int, d_model: int, num_heads: int, d_ff: int, num_layers: int) -> None:
