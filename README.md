@@ -2,6 +2,17 @@
 In this repo, I write a quick optimized implementation of standard BPE algorithm and Transformer architecture. The task was adopted from the stanford course: CS336 assignment
 [cs336_spring2025_assignment1_basics.pdf](./cs336_spring2025_assignment1_basics.pdf)
 
+# FLOPs and Parameters count
+**Input params
+vocab_size
+context_length
+num_layers
+d_model
+num_heads
+d_ff**
+
+Refer this [sheet](https://docs.google.com/spreadsheets/d/1Rl0c0pFwpkKEoTXUP5EMbv3ZgZEMwPsn/edit?usp=sharing&ouid=109510744950242843494&rtpof=true&sd=true)
+
 ## Setup
 
 ### Environment (copied from assignment)
