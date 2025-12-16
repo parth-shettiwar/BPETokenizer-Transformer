@@ -3,13 +3,14 @@ In this repo, I write a quick optimized implementation of standard BPE algorithm
 [cs336_spring2025_assignment1_basics.pdf](./cs336_spring2025_assignment1_basics.pdf)
 
 # FLOPs and Parameters count
-**Input params
-vocab_size
-context_length
-num_layers
-d_model
-num_heads
-d_ff**
+**Input params**
+
+1. vocab_size
+2. context_length
+3. num_layers
+4. d_model
+5. num_heads
+6. d_ff
 
 Refer this [sheet](https://docs.google.com/spreadsheets/d/1Rl0c0pFwpkKEoTXUP5EMbv3ZgZEMwPsn/edit?usp=sharing&ouid=109510744950242843494&rtpof=true&sd=true)
 
