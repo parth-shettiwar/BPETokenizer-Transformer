@@ -280,36 +280,6 @@ class Tokenizer:
         self.merges = merges
         self.special_tokens = special_tokens 
 
-    @classmethod
-    def from_files(cls, vocab_filepath:str, merges_filepath:str, special_tokens: list[str] | None = None):
-        """
-        Class method that constructs and returns a Tokenizer from a serialized vocabulary and list of merges
-        (in the same format that your BPE training code output) and (optionally) a list of special
-        tokens. This method should accept the following additional parameters:
-        """
-        import json
-        with open(vocab_filepath, "r") as f:
-            vocab_json = json.load(f)
-        
-        vocab = {}
-        for token_str, token_id in vocab_json.items():
-            vocab[token_id] = token_str.encode("utf-8")
-
-        # Read merges from text file
-        # Format: each line is "token1 token2"
-        merges = []
-        with open(merges_filepath, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    parts = line.split(" ", 1)
-                    if len(parts) == 2:
-                        first = parts[0].encode("utf-8")
-                        second = parts[1].encode("utf-8")
-                        merges.append((first, second))
-
-        return cls(vocab, merges, special_tokens)
-
     def encode(self, text: str) -> list[int]:
         """
         Encode an input text into a sequence of token IDs.
