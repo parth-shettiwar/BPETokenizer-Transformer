@@ -378,7 +378,68 @@ class Tokenizer:
         Decode a sequence of token IDs into text.
         """
         try:
-            return "".join([self.vocab[token_id].decode("utf-8") for token_id in ids])
-        except KeyError:
-            raise ValueError(f"Token IDs not in vocabulary.")
+            return "".join([self.vocab[token_id] for token_id in ids]).decode("utf-8")
+        except:
+            return None
 
+
+def train_dataset(input_path: str, vocab_size: int, special_tokens: list[str], output_save_folder: str):
+    print("="*60)
+    print("Training Tiny stories dataset...")
+    
+    start_time = time.time()
+    trainer = BPETrainer(input_path=input_path, vocab_size=vocab_size, special_tokens=special_tokens)
+    vocab, merges = trainer.train_bpe()
+    
+    # Get training stats
+    end_time = time.time()
+    # Get peak memory from OS (no overhead during training)
+    peak_mem_bytes = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # On macOS ru_maxrss is in bytes, on Linux it's in KB
+    
+    if sys.platform == "darwin":
+        peak_mem_gb = peak_mem_bytes / (1024 ** 3)
+    else:
+        peak_mem_gb = peak_mem_bytes / (1024 ** 2)  # Linux: KB to GB
+    
+    total_time_seconds = end_time - start_time
+    total_time_hours = total_time_seconds / 3600
+    
+    # Find longest token in vocabulary
+    longest_token = max(vocab.values(), key=len)
+    longest_token_str = longest_token.decode("utf-8", errors="replace")
+    longest_token_len = len(longest_token)
+    
+    print("\n" + "="*60)
+    print("TRAINING STATS")
+    print("="*60)
+    print(f"Total training time: {total_time_seconds:.2f} seconds ({total_time_hours:.4f} hours)")
+    print(f"Peak memory usage: {peak_mem_gb:.4f} GB ({peak_mem_gb * 1024:.2f} MB)")
+    print(f"Longest token: '{longest_token_str}' ({longest_token_len} bytes)")
+    print("="*60 + "\n")
+
+    # Serialize the resulting vocabulary and merges to disk
+    # Convert bytes to strings for JSON (latin-1 is lossless for bytes 0-255)
+    vocab_json = {token_bytes.decode("latin-1"): token_id for token_id, token_bytes in vocab.items()}
+    with open(os.path.join(output_save_folder, "vocab.json"), "w") as f:
+        json.dump(vocab_json, f)
+    with open(os.path.join(output_save_folder, "merges.txt"), "w") as f:
+        for a, b in merges:
+            f.write(f"{a.decode('latin-1')} {b.decode('latin-1')}\n")
+    print(f"Saved vocabulary and merges to {output_save_folder}")
+
+
+if __name__ == "__main__":
+    # Train Tiny stories dataset
+    # input_path = "./data/TinyStoriesV2-GPT4-train.txt"
+    # vocab_size = 10000
+    # special_tokens = ["<|endoftext|>"]
+    # output_save_folder = "./cs336_basics/outputs/TinyStories"
+    # train_dataset(input_path, vocab_size, special_tokens, output_save_folder)
+
+    # Train OWT
+    # input_path = "./data/owt_train.txt"
+    # vocab_size = 32000
+    # special_tokens = ["<|endoftext|>"]
+    # output_save_folder = "./cs336_basics/outputs/owt"
+    # train_dataset(input_path, vocab_size, special_tokens, output_save_folder)
