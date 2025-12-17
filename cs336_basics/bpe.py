@@ -175,12 +175,7 @@ class BPETrainer:
         return most_frequent_pair
 
 
-    def train_bpe(
-        self,
-        input_path: str,
-        vocab_size: int,
-        special_tokens: list[str],
-    ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    def train_bpe(self) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
         """
         Train a byte-level BPE tokenizer on the input text file.
 
@@ -194,34 +189,56 @@ class BPETrainer:
             as a dictionary mapping token IDs to byte sequences, and a list of merges as tuples
             of byte sequences.
         """
-        print("Reading file...")
+        # Profiling: track time for each major step
+        profile_times = {}
+        total_start = time.time()
         
-        text = self.read_file_stream(input_path)
-        print("File read complete. Length:", len(text))
+        print("Reading file...")
+        t0 = time.time()
+        text = self.read_file_stream(self.input_path)
+        profile_times['read_file'] = time.time() - t0
+        print(f"File read complete. Length: {len(text)} (took {profile_times['read_file']:.2f}s)")
+        
         print("Splitting by special tokens...")
-        chunks = split_by_special_tokens(text, special_tokens)
-        print("Splitting complete. Number of chunks:", len(chunks))
+        t0 = time.time()
+        chunks = split_by_special_tokens(text, self.special_tokens)
+        profile_times['split_special_tokens'] = time.time() - t0
+        print(f"Splitting complete. Number of chunks: {len(chunks)} (took {profile_times['split_special_tokens']:.2f}s)")
+        
         print("Pretokenizing with multiprocessing...")
+        t0 = time.time()
         self.pretokenized_tokens = pretokenize_frequency_multiprocessing(chunks)
-        print("Pretokenization complete. Number of unique pretokenized tokens:", len(self.pretokenized_tokens)) # pretokenized_tokens
+        profile_times['pretokenize'] = time.time() - t0
+        print(f"Pretokenization complete. Number of unique pretokenized tokens: {len(self.pretokenized_tokens)} (took {profile_times['pretokenize']:.2f}s)")
+        
         # Initialize vocab with single byte tokens
+        print("Initializing vocabulary...")
+        t0 = time.time()
         vocab = {}
         for b in range(256):
             vocab[b] = bytes([b])
-        for st in special_tokens:
+        for st in self.special_tokens:
             st_bytes = st.encode("utf-8")
-            if st_bytes not in vocab.values() and len(vocab) < vocab_size:
+            if st_bytes not in vocab.values() and len(vocab) < self.vocab_size:
                 vocab[len(vocab)] = st_bytes
         self.vocab = vocab
-        print("Vocab initialized. Size:", len(vocab))
+        profile_times['vocab_init'] = time.time() - t0
+        print(f"Vocab initialized. Size: {len(vocab)} (took {profile_times['vocab_init']:.2f}s)")
 
-        # print("Starting BPE merges...")
+        # BPE merge loop
         merges = []
-        num_merges = vocab_size - len(self.vocab)
+        num_merges = self.vocab_size - len(self.vocab)
         count = 0
+        merge_times = []
+        
+        print("Starting BPE merges...")
+        merge_start = time.time()
         with tqdm(total=num_merges, desc="BPE merges", unit="merge") as pbar:
-            while len(self.vocab) < vocab_size:
-                most_frequent_pair = self.merge_pairs(vocab_size, self.vocab)
+            while len(self.vocab) < self.vocab_size:
+                t0 = time.time()
+                most_frequent_pair = self.merge_pairs(self.vocab_size, self.vocab)
+                merge_times.append(time.time() - t0)
+                
                 if most_frequent_pair is None:
                     print("No more pairs to merge.")
                     break
@@ -229,6 +246,30 @@ class BPETrainer:
                 pbar.update(1)
                 pbar.set_postfix({"vocab_size": len(self.vocab), "pair": f"{most_frequent_pair[0][:10]}+{most_frequent_pair[1][:10]}"})
                 count += 1
+        
+        profile_times['merge_loop_total'] = time.time() - merge_start
+        profile_times['merge_avg'] = sum(merge_times) / len(merge_times) if merge_times else 0
+        profile_times['merge_min'] = min(merge_times) if merge_times else 0
+        profile_times['merge_max'] = max(merge_times) if merge_times else 0
+        profile_times['total'] = time.time() - total_start
+        
+        # Print profiling summary
+        print("\n" + "="*60)
+        print("PROFILING SUMMARY")
+        print("="*60)
+        print(f"Read file:              {profile_times['read_file']:>10.2f}s  ({profile_times['read_file']/profile_times['total']*100:>5.1f}%)")
+        print(f"Split special tokens:   {profile_times['split_special_tokens']:>10.2f}s  ({profile_times['split_special_tokens']/profile_times['total']*100:>5.1f}%)")
+        print(f"Pretokenize:            {profile_times['pretokenize']:>10.2f}s  ({profile_times['pretokenize']/profile_times['total']*100:>5.1f}%)")
+        print(f"Vocab init:             {profile_times['vocab_init']:>10.2f}s  ({profile_times['vocab_init']/profile_times['total']*100:>5.1f}%)")
+        print(f"Merge loop (total):     {profile_times['merge_loop_total']:>10.2f}s  ({profile_times['merge_loop_total']/profile_times['total']*100:>5.1f}%)")
+        print(f"  - Avg per merge:      {profile_times['merge_avg']:>10.4f}s")
+        print(f"  - Min merge time:     {profile_times['merge_min']:>10.4f}s")
+        print(f"  - Max merge time:     {profile_times['merge_max']:>10.4f}s")
+        print(f"  - Total merges:       {len(merge_times):>10d}")
+        print("-"*60)
+        print(f"TOTAL TIME:             {profile_times['total']:>10.2f}s")
+        print("="*60 + "\n")
+        
         return self.vocab, merges
 
 
