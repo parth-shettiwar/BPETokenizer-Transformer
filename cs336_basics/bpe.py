@@ -286,63 +286,24 @@ class Tokenizer:
         """
         # cache token tuple to token id
         token_tuple_token_ids = {}
-        reverse_vocab = {v: k for k, v in self.vocab.items()}
-        # pretokenize each chunk
-        pretokenized_tokens = pretokenize_text(text)
-        # apply merges in same order as in self.merges.
+        reverse_vocab = {v: k for k, v in self.vocab.items()} 
+               
+        # split into chunks by special tokens
+        chunks, special_token_flag = split_preserving_special_tokens(text, self.special_tokens)
+        
         token_ids = []
-        print("pretokenized_tokens:", pretokenized_tokens)
-        for token_tuple in pretokenized_tokens:
-            print("########## Token tuple before merges:", token_tuple)
-            if token_tuple in token_tuple_token_ids:
-                token_ids.extend(token_tuple_token_ids[token_tuple])
+        for i, chunk in enumerate(chunks):
+            if special_token_flag[i]:
+                token_ids.append(reverse_vocab[chunk.encode("utf-8")])
                 continue
-            
-            original_token_tuple = token_tuple
-            for merge in self.merges:
-                new_token_list = []
-                i = 0
-                while i < len(token_tuple):
-                    if i < len(token_tuple) - 1 and (token_tuple[i], token_tuple[i+1]) == merge:
-                        new_token_list.append(token_tuple[i] + token_tuple[i+1])
-                        i += 2
-                        print("Applied merge:", merge)
-                    else:
-                        new_token_list.append(token_tuple[i])
-                        i += 1
-                token_tuple = tuple(new_token_list)
-            current_token_ids = []
-            for token in token_tuple:
-                print("Token:", token)
-                if token in reverse_vocab:
-                    current_token_ids.append(reverse_vocab[token])
-                else:
-                    raise ValueError(f"Token {token} not in vocabulary.")
-            token_tuple_token_ids[original_token_tuple] = current_token_ids
-            token_ids.extend(current_token_ids)
-            print("########## Token tuple after merges:", token_tuple, token_ids)
-        return token_ids
-         
-
-    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        """
-        Given an iterable of
-        strings (e.g., a Python file handle), return a generator that lazily yields token IDs. This is
-        required for memory-eﬀicient tokenization of large files that we cannot directly load into
-        memory.
-        """
-        # cache token tuple to token id
-        token_tuple_token_ids = {}
-        reverse_vocab = {v: k for k, v in self.vocab.items()}
-        # get next string from iterable
-        for text in iterable:
-            pretokenized_tokens = pretokenize_text(text)
+            # pretokenize chunk
+            pretokenized_tokens = pretokenize_text(chunk)
+            # apply merges in same order as in self.merges.
             for token_tuple in pretokenized_tokens:
                 if token_tuple in token_tuple_token_ids:
-                    for token_id in token_tuple_token_ids[token_tuple]:
-                        yield token_id
+                    token_ids.extend(token_tuple_token_ids[token_tuple])
                     continue
-
+                
                 original_token_tuple = token_tuple
                 for merge in self.merges:
                     new_token_list = []
@@ -362,8 +323,55 @@ class Tokenizer:
                     else:
                         raise ValueError(f"Token {token} not in vocabulary.")
                 token_tuple_token_ids[original_token_tuple] = current_token_ids
-                for token_id in current_token_ids:
-                    yield token_id
+                token_ids.extend(current_token_ids)
+        return token_ids
+         
+
+    def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        """
+        Given an iterable of
+        strings (e.g., a Python file handle), return a generator that lazily yields token IDs. This is
+        required for memory-eﬀicient tokenization of large files that we cannot directly load into
+        memory.
+        """
+        # cache token tuple to token id
+        token_tuple_token_ids = {}
+        reverse_vocab = {v: k for k, v in self.vocab.items()}
+        # get next string from iterable
+        for text in iterable:
+            chunks, special_token_flag = split_preserving_special_tokens(text, self.special_tokens)
+            for i, chunk in enumerate(chunks):
+                if special_token_flag[i]:
+                    yield reverse_vocab[chunk.encode("utf-8")]
+                    continue
+                pretokenized_tokens = pretokenize_text(chunk)
+                for token_tuple in pretokenized_tokens:
+                    if token_tuple in token_tuple_token_ids:
+                        for token_id in token_tuple_token_ids[token_tuple]:
+                            yield token_id
+                        continue
+                    original_token_tuple = token_tuple
+
+                    for merge in self.merges:
+                        new_token_list = []
+                        i = 0
+                        while i < len(token_tuple):
+                            if i < len(token_tuple) - 1 and (token_tuple[i], token_tuple[i+1]) == merge:
+                                new_token_list.append(token_tuple[i] + token_tuple[i+1])
+                                i += 2
+                            else:
+                                new_token_list.append(token_tuple[i])
+                                i += 1
+                        token_tuple = tuple(new_token_list)
+                    current_token_ids = []
+                    for token in token_tuple:
+                        if token in reverse_vocab:
+                            current_token_ids.append(reverse_vocab[token])
+                        else:
+                            raise ValueError(f"Token {token} not in vocabulary.")
+                    token_tuple_token_ids[original_token_tuple] = current_token_ids
+                    for token_id in current_token_ids:
+                        yield token_id
 
     def decode(self, ids: list[int]) -> str:
         """
