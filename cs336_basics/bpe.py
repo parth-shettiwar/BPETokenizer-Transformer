@@ -68,14 +68,17 @@ def pretokenize_text_with_frequency(text: str) -> dict[tuple[int], int]:
         frequency[split_token_by_bytes] = frequency.get(split_token_by_bytes, 0) + 1
     return frequency
 
-def pretokenize_frequency_multiprocessing(chunks: list[str]) -> dict[tuple[bytes], int]:
-    with multiprocessing.Pool() as pool:
-        results = pool.starmap(pretokenize_text_with_frequency, [(chunk,) for chunk in chunks])
-    # merge all dicts
+def pretokenize_frequency_multiprocessing(chunks: list[str], batch_size: int = 10000) -> dict[tuple[bytes], int]:
+    
     pretokenized_tokens = {}
-    for result in results:
-        for token, freq in result.items():
-            pretokenized_tokens[token] = pretokenized_tokens.get(token, 0) + freq
+    print(f"Processing {len(chunks)} chunks")
+    for i in tqdm(range(0, len(chunks), batch_size)):
+        batch = chunks[i:i+batch_size]
+        with multiprocessing.Pool() as pool:
+            results  = pool.starmap(pretokenize_text_with_frequency, [(chunk,) for chunk in batch])
+        for result in results:
+            for token, freq in result.items():
+                pretokenized_tokens[token] = pretokenized_tokens.get(token, 0) + freq
     return pretokenized_tokens
 
 # normal pretokenize function without computing frequency
