@@ -39,6 +39,39 @@ list(b'\xe3\x81') = [227, 129]
 The byte 0xE3 indicates the start of a 3-byte UTF-8 character, which must be followed by two continuation bytes. However, in the sequence b'\xe3\x81', there is only one following byte, and although 0x81 is a valid continuation byte, the sequence is still incomplete because a third continuation byte is missing. Since UTF-8 does not allow truncated or partial multi-byte characters, this 2-byte sequence cannot be decoded into any valid Unicode character and will always raise a decode error.
 
 
+Problem (train_bpe_tinystories): BPE Training on TinyStories (2 points)
+(a) Train a byte-level BPE tokenizer on the TinyStories dataset, using a maximum vocabulary size
+of 10,000. Make sure to add the TinyStories <|endoftext|> special token to the vocabulary.
+Serialize the resulting vocabulary and merges to disk for further inspection. How many hours
+and memory did training take? What is the longest token in the vocabulary? Does it make sense?
+Resource requirements: ≤30 minutes (no GPUs), ≤30GB RAM
+Hint You should be able to get under 2 minutes for BPE training using multiprocessing during
+pretokenization and the following two facts:
+(a) The <|endoftext|> token delimits documents in the data files.
+(b) The <|endoftext|> token is handled as a special case before the BPE merges are applied.
+Total time taken: 277.75s
+Peak memory usage: 18.7227 GB (19172.08 MB)
+Longest token: ' accomplishment' (15 bytes)
+It makes sense as the word is pretty common in dataset.
+
+(b) Profile your code. What part of the tokenizer training process takes the most time?
+Merging loop took the most time, followed by pretokenization.
+============================================================
+PROFILING SUMMARY
+============================================================
+Read file:                    2.63s  (  0.9%)
+Split special tokens:         1.72s  (  0.6%)
+Pretokenize:                103.05s  ( 37.1%)
+Vocab init:                   0.00s  (  0.0%)
+Merge loop (total):         170.35s  ( 61.3%)
+  - Avg per merge:          0.0174s
+  - Min merge time:         0.0139s
+  - Max merge time:         0.4256s
+  - Total merges:             9743
+------------------------------------------------------------
+TOTAL TIME:                 277.75s
+============================================================
+
 
 Problem (transformer_accounting): Transformer LM resource accounting (5 points): Refer sheet: https://docs.google.com/spreadsheets/d/1Rl0c0pFwpkKEoTXUP5EMbv3ZgZEMwPsn/edit?usp=sharing&ouid=109510744950242843494&rtpof=true&sd=true
 (a) Consider GPT-2 XL, which has the following configuration:
