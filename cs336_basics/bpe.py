@@ -5,14 +5,58 @@ import regex as re
 import multiprocessing
 import pathlib
 from tqdm import tqdm
+import os
+import time
+import resource  
+import sys
 
 do_print = False
 
 def split_by_special_tokens(text: str, special_tokens: list[str]) -> list[str]:
+    """
+    Split text by special tokens, removing the special tokens.
+    """
     if not special_tokens:
         return [text]
     split_pattern = "|".join(re.escape(token) for token in special_tokens)
     return re.split(split_pattern, text)
+
+def split_preserving_special_tokens(text: str, special_tokens: list[str]) -> list[str]:
+    """
+    Split text by special tokens, preserving the special tokens.
+    """
+    if not special_tokens:
+        return [text], [False]
+    # order special tokens by length, longest first
+    special_tokens = sorted(special_tokens, key=len, reverse=True)
+    split_pattern = "|".join(re.escape(token) for token in special_tokens)
+    # find locations of special tokens by regex
+    special_token_locations = [(match.start(), match.end()) for match in re.finditer(split_pattern, text)]
+    if special_token_locations==[]:
+        return [text], [False]
+    # split text at special token locations
+    chunks = []
+    special_token_flag = []
+    for i in range(len(special_token_locations)):
+        start,end = special_token_locations[i]
+        if i==0:
+            if start>0:
+                chunks.append(text[:start])
+                special_token_flag.append(False)
+            chunks.append(text[start:end])
+            special_token_flag.append(True)
+        else:
+            prev_start, prev_end = special_token_locations[i-1]
+            if start>prev_end:
+                chunks.append(text[prev_end:start])
+                special_token_flag.append(False)
+            chunks.append(text[start:end])
+            special_token_flag.append(True)
+    if end<len(text):
+        chunks.append(text[end:])
+        special_token_flag.append(False)
+
+    return chunks, special_token_flag
 
 def pretokenize_text_with_frequency(text: str) -> dict[tuple[int], int]:
     PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
