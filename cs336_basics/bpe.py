@@ -378,7 +378,7 @@ class Tokenizer:
         Decode a sequence of token IDs into text.
         """
         try:
-            return "".join([self.vocab[token_id] for token_id in ids]).decode("utf-8")
+            return b"".join([self.vocab[token_id] for token_id in ids]).decode("utf-8")
         except:
             return None
 
