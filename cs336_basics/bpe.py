@@ -282,23 +282,44 @@ class Tokenizer:
         self.vocab = vocab
         self.merges = merges
         self.special_tokens = special_tokens 
+    
+    @classmethod
+    def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None):
+        """
+        Class
+        method that constructs and return a Tokenizer from a serialized vocabulary and list of merges
+        (in the same format that your BPE training code output) and (optionally) a list of special
+        tokens. This method should accept the following additional parameters:
+        vocab: dict[int, bytes] - A dictionary mapping token IDs to byte sequences.
+        merges: list[tuple[bytes, bytes]] - A list of merges as tuples of byte sequences.
+        vocab and merge are in pickle format
+        """
+        with open(vocab_filepath, "rb") as f:
+            vocab = pickle.load(f)
+        with open(merges_filepath, "rb") as f:
+            merges = pickle.load(f)
+        return cls(vocab, merges, special_tokens)
 
     def encode(self, text: str) -> list[int]:
         """
         Encode an input text into a sequence of token IDs.
         """
-        # cache token tuple to token id
-        token_tuple_token_ids = {}
+
         reverse_vocab = {v: k for k, v in self.vocab.items()} 
                
         # split into chunks by special tokens
         chunks, special_token_flag = split_preserving_special_tokens(text, self.special_tokens)
-        
+        merges_rank_dic = {merge: rank for rank, merge in enumerate(self.merges)}
         token_ids = []
-        for i, chunk in enumerate(chunks):
-            if special_token_flag[i]:
+        print("Number of chunks: ", len(chunks))
+      
+        token_tuple_token_ids = {}
+        for idx, chunk in enumerate(tqdm(chunks)):
+               
+            if special_token_flag[idx]:
                 token_ids.append(reverse_vocab[chunk.encode("utf-8")])
                 continue
+
             # pretokenize chunk
             pretokenized_tokens = pretokenize_text(chunk)
             # apply merges in same order as in self.merges.
@@ -308,17 +329,23 @@ class Tokenizer:
                     continue
                 
                 original_token_tuple = token_tuple
-                for merge in self.merges:
-                    new_token_list = []
-                    i = 0
-                    while i < len(token_tuple):
-                        if i < len(token_tuple) - 1 and (token_tuple[i], token_tuple[i+1]) == merge:
-                            new_token_list.append(token_tuple[i] + token_tuple[i+1])
-                            i += 2
-                        else:
-                            new_token_list.append(token_tuple[i])
-                            i += 1
-                    token_tuple = tuple(new_token_list)
+                token_tuple = list(token_tuple)
+                while len(token_tuple)>1:
+                    best_pos = -1
+                    rank_min = float('inf')
+                    for i in range(len(token_tuple) - 1):
+                        if (token_tuple[i], token_tuple[i+1]) in merges_rank_dic:
+                            if merges_rank_dic[(token_tuple[i], token_tuple[i+1])] < rank_min:
+                                best_merge = bytes(token_tuple[i] + token_tuple[i+1])
+                                rank_min = merges_rank_dic[(token_tuple[i], token_tuple[i+1])]
+                                best_pos = i
+                    if best_pos == -1:
+                        break
+        
+                    token_tuple[best_pos] = best_merge
+                    del token_tuple[best_pos+1]
+                    
+
                 current_token_ids = []
                 for token in token_tuple:
                     if token in reverse_vocab:
@@ -327,7 +354,9 @@ class Tokenizer:
                         raise ValueError(f"Token {token} not in vocabulary.")
                 token_tuple_token_ids[original_token_tuple] = current_token_ids
                 token_ids.extend(current_token_ids)
+
         return token_ids
+
          
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
