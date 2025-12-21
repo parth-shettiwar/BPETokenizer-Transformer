@@ -49,29 +49,97 @@ Hint You should be able to get under 2 minutes for BPE training using multiproce
 pretokenization and the following two facts:
 (a) The <|endoftext|> token delimits documents in the data files.
 (b) The <|endoftext|> token is handled as a special case before the BPE merges are applied.
-Total time taken: 277.75s
-Peak memory usage: 18.7227 GB (19172.08 MB)
+============================================================
+TRAINING STATS
+============================================================
+Total training time: 98.65 seconds 
+Peak memory usage: 10.8961 GB 
 Longest token: ' accomplishment' (15 bytes)
-It makes sense as the word is pretty common in dataset.
+============================================================
 
 (b) Profile your code. What part of the tokenizer training process takes the most time?
-Merging loop took the most time, followed by pretokenization.
+Pretokenization took the most time, followed by merging loop.
 ============================================================
 PROFILING SUMMARY
 ============================================================
-Read file:                    2.63s  (  0.9%)
-Split special tokens:         1.72s  (  0.6%)
-Pretokenize:                103.05s  ( 37.1%)
+Read file:                    4.17s  (  4.2%)
+Split special tokens:         3.52s  (  3.6%)
+Pretokenize:                 69.77s  ( 71.0%)
 Vocab init:                   0.00s  (  0.0%)
-Merge loop (total):         170.35s  ( 61.3%)
-  - Avg per merge:          0.0174s
-  - Min merge time:         0.0139s
-  - Max merge time:         0.4256s
+Merge loop (total):          20.86s  ( 21.2%)
+  - Avg per merge:          0.0021s
+  - Min merge time:         0.0003s
+  - Max merge time:         0.1280s
   - Total merges:             9743
 ------------------------------------------------------------
-TOTAL TIME:                 277.75s
+TOTAL TIME:                  98.32s
 ============================================================
 
+
+Problem (train_bpe_expts_owt): BPE Training on OpenWebText (2 points)
+(a) Train a byte-level BPE tokenizer on the OpenWebText dataset, using a maximum vocabulary
+size of 32,000. Serialize the resulting vocabulary and merges to disk for further inspection. What
+is the longest token in the vocabulary? Does it make sense?
+Resource requirements: ≤12 hours (no GPUs), ≤100GB RAM
+============================================================
+PROFILING SUMMARY
+============================================================
+Read file:                   46.18s  (  0.9%)
+Split special tokens:        82.32s  (  1.6%)
+Pretokenize:                699.33s  ( 13.5%)
+Vocab init:                   0.00s  (  0.0%)
+Merge loop (total):        4367.81s  ( 84.1%)
+  - Avg per merge:          0.1374s
+  - Min merge time:         0.0041s
+  - Max merge time:        50.5794s
+  - Total merges:            31743
+------------------------------------------------------------
+TOTAL TIME:                5195.65s
+============================================================
+
+============================================================
+TRAINING STATS
+============================================================
+Total training time: 5221.81 seconds (1.4505 hours)
+Peak memory usage: 26.2861 GB (26917.02 MB)
+Longest token: 'ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ' (64 bytes) -> 4679 times in the dataset
+============================================================
+
+(b) Compare and contrast the tokenizer that you get training on TinyStories versus OpenWebText.
+Deliverable: The merge loop takes more time now since vocab size is huge as well as dataset is much larger.
+
+Problem (tokenizer_experiments): Experiments with tokenizers (4 points)
+(a) Sample 10 documents from TinyStories and OpenWebText. Using your previously-trained TinyS-
+tories and OpenWebText tokenizers (10K and 32K vocabulary size, respectively), encode these
+sampled documents into integer IDs. What is each tokenizer’s compression ratio (bytes/token)?
+TinyStories compression ratio: 4.1123 bytes/token
+OWT compression ratio: 4.6912 bytes/token
+
+(b) What happens if you tokenize your OpenWebText sample with the TinyStories tokenizer? Com-
+pare the compression ratio and/or qualitatively describe what happens.
+total_bytes_owt_ts, total_tokens_owt_ts
+The tiny stories tokenizer is much less efficient on owt docs than ts docs. This is because the tiny stories tokenizer is trained on a much smaller dataset and has a much smaller vocabulary size. OpenWebText contains news articles, technical content, and diverse topics with words rarely seen in children's stories. Words common in OWT but rare in TinyStories (e.g., "cryptocurrency", "legislation", "algorithm") won't have dedicated tokens. They get split into many smaller subword pieces, increasing token count. The 10K vocab can't capture the lexical diversity of web text. OWT's 32K tokenizer learned merges for technical terms, proper nouns, and domain-specific vocabulary.
+
+
+(c) Estimate the throughput of your tokenizer (e.g., in bytes/second). How long would it take to
+tokenize the Pile dataset (825GB of text)?
+Time taken to encode OWT docs: 0.08 seconds
+Throughput of OWT tokenizer: 390473.80 bytes/second
+Time taken to encode TinyStories docs: 0.03 seconds
+Throughput of TS tokenizer: 291510.71 bytes/second
+
+Time taken to tokenize Pile dataset with TS tokenizer: 35.17 days
+Time taken to tokenize Pile dataset with OWT tokenizer: 26.26 days
+
+(d) Using your TinyStories and OpenWebText tokenizers, encode the respective training and devel-
+opment datasets into a sequence of integer token IDs. We’ll use this later to train our language
+model. We recommend serializing the token IDs as a NumPy array of datatype uint16. Why is
+uint16 an appropriate choice?
+Range is sufficient: uint16 can represent values from 0 to 65,535. Our vocabulary sizes are:
+TinyStories: 10,000 tokens
+OpenWebText: 32,000 tokens
+Both fit comfortably within the 65,535 max value of uint16.
+Memory efficiency: uint16 uses 2 bytes per token
 
 Problem (transformer_accounting): Transformer LM resource accounting (5 points): Refer sheet: https://docs.google.com/spreadsheets/d/1Rl0c0pFwpkKEoTXUP5EMbv3ZgZEMwPsn/edit?usp=sharing&ouid=109510744950242843494&rtpof=true&sd=true
 (a) Consider GPT-2 XL, which has the following configuration:
