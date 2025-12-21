@@ -385,10 +385,17 @@ class Tokenizer:
         except:
             return None
 
+def save_tokenizer(vocab, merges, output_folder):
+    # Save vocab as pickle (bytes preserved exactly)
+    with open(os.path.join(output_folder, "vocab.pkl"), "wb") as f:
+        pickle.dump(vocab, f)
+    
+    # Save merges as pickle (list of byte tuples)
+    with open(os.path.join(output_folder, "merges.pkl"), "wb") as f:
+        pickle.dump(merges, f)
 
 def train_dataset(input_path: str, vocab_size: int, special_tokens: list[str], output_save_folder: str):
     print("="*60)
-    print("Training Tiny stories dataset...")
     
     start_time = time.time()
     trainer = BPETrainer(input_path=input_path, vocab_size=vocab_size, special_tokens=special_tokens)
@@ -423,12 +430,7 @@ def train_dataset(input_path: str, vocab_size: int, special_tokens: list[str], o
 
     # Serialize the resulting vocabulary and merges to disk
     # Convert bytes to strings for JSON (latin-1 is lossless for bytes 0-255)
-    vocab_json = {token_bytes.decode("latin-1"): token_id for token_id, token_bytes in vocab.items()}
-    with open(os.path.join(output_save_folder, "vocab.json"), "w") as f:
-        json.dump(vocab_json, f)
-    with open(os.path.join(output_save_folder, "merges.txt"), "w") as f:
-        for a, b in merges:
-            f.write(f"{a.decode('latin-1')} {b.decode('latin-1')}\n")
+    save_tokenizer(vocab, merges, output_save_folder)
     print(f"Saved vocabulary and merges to {output_save_folder}")
 
 
