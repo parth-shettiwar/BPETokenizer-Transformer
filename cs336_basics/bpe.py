@@ -1,4 +1,5 @@
 from collections.abc import Iterable, Iterator
+from collections import defaultdict
 import json
 import regex as re
 # multiprocessing
@@ -9,6 +10,8 @@ import os
 import time
 import resource  
 import sys
+import pickle
+import numpy as np
 
 do_print = False
 
@@ -68,17 +71,18 @@ def pretokenize_text_with_frequency(text: str) -> dict[tuple[int], int]:
         frequency[split_token_by_bytes] = frequency.get(split_token_by_bytes, 0) + 1
     return frequency
 
-def pretokenize_frequency_multiprocessing(chunks: list[str], batch_size: int = 10000) -> dict[tuple[bytes], int]:
+def pretokenize_frequency_multiprocessing(chunks: list[str], batch_size: int = 40000, num_workers: int = 32) -> dict[tuple[bytes], int]:
     
     pretokenized_tokens = {}
-    print(f"Processing {len(chunks)} chunks")
-    for i in tqdm(range(0, len(chunks), batch_size)):
-        batch = chunks[i:i+batch_size]
-        with multiprocessing.Pool() as pool:
-            results  = pool.starmap(pretokenize_text_with_frequency, [(chunk,) for chunk in batch])
-        for result in results:
-            for token, freq in result.items():
-                pretokenized_tokens[token] = pretokenized_tokens.get(token, 0) + freq
+    print(f"Processing {len(chunks)} chunks with {num_workers} workers")
+    
+    with multiprocessing.Pool(processes=num_workers) as pool:
+        for i in tqdm(range(0, len(chunks), batch_size)):
+            batch = chunks[i:i+batch_size]
+            # Use imap_unordered with chunksize for better throughput
+            for result in pool.imap_unordered(pretokenize_text_with_frequency, batch, chunksize=100):
+                for token, freq in result.items():
+                    pretokenized_tokens[token] = pretokenized_tokens.get(token, 0) + freq
     return pretokenized_tokens
 
 # normal pretokenize function without computing frequency
@@ -98,10 +102,12 @@ class BPETrainer:
         self.input_path = input_path
         self.vocab_size = vocab_size
         self.special_tokens = special_tokens
-        self.pairs_bytes = {}
+        self.pairs_bytes = defaultdict(int)
         self.pretokenized_tokens = {}
         self.vocab = {}
         self.most_frequent_pair = None
+        self.pair_to_tokens = defaultdict(set)
+
     def read_file(self, input_path: str) -> str:
         with open(input_path, encoding="utf-8") as f:
             text = f.read()
@@ -117,12 +123,13 @@ class BPETrainer:
     def merge_pairs(self, vocab_size: int, pairs_bytes: dict[tuple[bytes], int] | None = None) -> tuple[bytes, bytes] | None:        
         most_frequent_pair = None
 
-        if self.pairs_bytes == {}:
+        if len(self.pairs_bytes) == 0:
             for token_tuple, freq in self.pretokenized_tokens.items():
                 for i in range(len(token_tuple) - 1):
                     pair = (token_tuple[i], token_tuple[i+1])
-                    self.pairs_bytes[pair] = self.pairs_bytes.get(pair, 0) + freq
-                    if most_frequent_pair is None or self.pairs_bytes[pair] > self.pairs_bytes.get(most_frequent_pair, 0) or (self.pairs_bytes[pair] == self.pairs_bytes.get(most_frequent_pair, 0) and pair > most_frequent_pair):
+                    self.pairs_bytes[pair] += freq
+                    self.pair_to_tokens[pair].add(token_tuple)
+                    if most_frequent_pair is None or self.pairs_bytes[pair] > self.pairs_bytes[most_frequent_pair] or (self.pairs_bytes[pair] == self.pairs_bytes[most_frequent_pair] and pair > most_frequent_pair):
                         most_frequent_pair = pair
         else:
             most_frequent_pair = max(
@@ -130,50 +137,41 @@ class BPETrainer:
                 key=lambda x: (x[1], x[0])
             )[0]
         
-        if most_frequent_pair is None or self.pairs_bytes.get(most_frequent_pair, 0) == 0:
+        if most_frequent_pair is None or self.pairs_bytes[most_frequent_pair] == 0:
             return None
 
         new_token = most_frequent_pair[0] + most_frequent_pair[1]
         if len(self.vocab) < vocab_size:
             self.vocab[len(self.vocab)] = new_token
-        new_pretokenized_tokens = {}
         
-        for token_tuple, freq in self.pretokenized_tokens.items():
-            has_pair = False
+        tokens_iterate = list(self.pair_to_tokens[most_frequent_pair])
+        for token_tuple in tokens_iterate:
+            freq = self.pretokenized_tokens[token_tuple]
             for i in range(len(token_tuple) - 1):
                 pair = (token_tuple[i], token_tuple[i+1])
-                if pair == most_frequent_pair:
-                    has_pair = True
-                    break
-
-            if has_pair:
-                for i in range(len(token_tuple) - 1):
-                    pair = (token_tuple[i], token_tuple[i+1])
-                    self.pairs_bytes[pair] = self.pairs_bytes.get(pair, 0) - freq
-                    if self.pairs_bytes[pair] <= 0:
-                        del self.pairs_bytes[pair]
+                self.pairs_bytes[pair] -= freq
+                self.pair_to_tokens[pair].discard(token_tuple)
+                if self.pairs_bytes[pair] <= 0:
+                    del self.pairs_bytes[pair]
 
             new_token_tuple = []
             i = 0
-            if has_pair:
-                while i < len(token_tuple):
-                    if i < len(token_tuple) - 1 and (token_tuple[i], token_tuple[i+1]) == most_frequent_pair:
-                        new_token_tuple.append(new_token)
-                        i += 2
-                    else:
-                        new_token_tuple.append(token_tuple[i])
-                        i += 1
-                new_token_tuple = tuple(new_token_tuple)
-                new_pretokenized_tokens[new_token_tuple] = (new_pretokenized_tokens.get(new_token_tuple, 0) + freq)
-            else:
-                new_pretokenized_tokens[token_tuple] = (new_pretokenized_tokens.get(token_tuple, 0) + freq)
 
-            if has_pair:
-                for i in range(len(new_token_tuple) - 1):
-                    pair = (new_token_tuple[i], new_token_tuple[i+1])
-                    self.pairs_bytes[pair] = self.pairs_bytes.get(pair, 0) + freq
+            while i < len(token_tuple):
+                if i < len(token_tuple) - 1 and (token_tuple[i], token_tuple[i+1]) == most_frequent_pair:
+                    new_token_tuple.append(new_token)
+                    i += 2
+                else:
+                    new_token_tuple.append(token_tuple[i])
+                    i += 1
+            new_token_tuple = tuple(new_token_tuple)
+            del self.pretokenized_tokens[token_tuple]
+            self.pretokenized_tokens[new_token_tuple] = (self.pretokenized_tokens.get(new_token_tuple, 0) + freq)
 
-        self.pretokenized_tokens = new_pretokenized_tokens
+            for i in range(len(new_token_tuple) - 1):
+                pair = (new_token_tuple[i], new_token_tuple[i+1])
+                self.pairs_bytes[pair] += freq
+                self.pair_to_tokens[pair].add(new_token_tuple)
 
         return most_frequent_pair
 
