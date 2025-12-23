@@ -408,9 +408,12 @@ class Tokenizer:
         Decode a sequence of token IDs into text.
         """
         try:
-            return b"".join([self.vocab[token_id] for token_id in ids]).decode("utf-8")
-        except:
-            return None
+            token_bytes = b"".join([self.vocab[token_id] for token_id in ids])
+            return token_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            token_bytes = b"".join([self.vocab[token_id] for token_id in ids])
+            return token_bytes.decode("utf-8", errors="replace")  # Replace invalid bytes with U+FFFD
+
 
 def save_tokenizer(vocab, merges, output_folder):
     # Save vocab as pickle (bytes preserved exactly)
@@ -461,7 +464,7 @@ def train_dataset(input_path: str, vocab_size: int, special_tokens: list[str], o
     print(f"Saved vocabulary and merges to {output_save_folder}")
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     # Train Tiny stories dataset
     # input_path = "./data/TinyStoriesV2-GPT4-train.txt"
     # vocab_size = 10000

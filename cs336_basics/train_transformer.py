@@ -339,7 +339,7 @@ if __name__ == "__main__":
         "context_length": context_length,
     })
 
-    device = 'cpu'
+    device = 'cuda'
 
     # load train and validation data for TS
     train_data = "./cs336_basics/outputs/TinyStories/train_dev_ids.npy"
@@ -357,10 +357,21 @@ if __name__ == "__main__":
     model = TransformerLM(vocab_size, context_length, d_model, num_heads, d_ff, num_layers)
     model.to(device)
     
-    # # Compile model for faster training (PyTorch 2.0+)
-    # model = torch.compile(model)
+    model = torch.compile(model, backend='eager')
+
+    # set torch float32 precision for GPU optimization
+    if device == 'cuda':
+        torch.set_float32_matmul_precision('high')  # Enables TensorFloat32 for faster matmuls
+    trainer = Trainer(model, tokenizer, train_data, val_data, model_args, batch_args, lr_args, device, checkpoint_dir)
 
     # load trainer
-    trainer = Trainer(model, tokenizer, train_data, val_data, num_iters, batch_size, context_length, device, checkpoint_dir, eval_freq, save_freq)
-    trainer.train()
+    # trainer.train()
+
+    # evaluate model
+    checkpoint_path = "./cs336_basics/outputs/TinyStories/checkpoints"
+    load_checkpoint(checkpoint_path, model, trainer.optimizer)
+    prompt = "Once upon a time"
+
+    output = transformer_decoder(model, tokenizer, prompt, device)
+    print(output)
 
