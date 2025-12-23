@@ -190,3 +190,58 @@ change?
 FLOPs increase by 33x
 ![alt text](./Images/context_length_gpt.png)
 As we increase context length, the QKV projections and other linear projections contribution decrease and attention scoring increases a lot. This is owing to L² growth for attention scoring.
+
+
+Problem (learning_rate_tuning): Tuning the learning rate (1 point)
+As we will see, one of the hyperparameters that affects training the most is the learning rate. Let’s
+see that in practice in our toy example. Run the SGD example above with three other values for the
+learning rate: 1e1, 1e2, and 1e3, for just 10 training iterations. What happens with the loss for each
+of these learning rates? Does it decay faster, slower, or does it diverge (i.e., increase over the course of
+training)?
+![alt text](./Images/1e1.png)
+![alt text](./Images/1e2.png)
+![alt text](./Images/1e3.png)
+LR = 1e1 and 1e2 converge, while LR = 1e3 diverges. Between 1e1 and 1e2, 1e2 converges faster, while 1e1 didnt even converge in 10 iterations. 
+
+
+Problem (adamwAccounting): Resource accounting for training with AdamW (2 points)
+Let us compute how much memory and compute running AdamW requires. Assume we are using
+float32 for every tensor.
+(a) How much peak memory does running AdamW require? Decompose your answer based on the
+memory usage of the parameters, activations, gradients, and optimizer state. Express your answer
+in terms of the batch_size and the model hyperparameters (vocab_size, context_length,
+num_layers, d_model, num_heads). Assume d_ff = 4 ×d_model.
+For simplicity, when calculating memory usage of activations, consider only the following compo-
+nents:
+• Transformer block
+– RMSNorm(s)
+– Multi-head self-attention sublayer: QKV projections, Q⊤ K matrix multiply, softmax,
+weighted sum of values, output projection.
+– Position-wise feed-forward: W1 matrix multiply, SiLU, W2 matrix multiply
+• final RMSNorm
+• output embedding
+• cross-entropy on logits
+Deliverable: An algebraic expression for each of parameters, activations, gradients, and opti-
+mizer state, as well as the total.
+(b) Instantiate your answer for a GPT-2 XL-shaped model to get an expression that only depends on
+the batch_size. What is the maximum batch size you can use and still fit within 80GB memory?
+Deliverable: An expression that looks like a·batch_size + b for numerical values a, b, and a
+number representing the maximum batch size.
+(c) How many FLOPs does running one step of AdamW take?
+Deliverable: An algebraic expression, with a brief justification.
+
+For parts a,b,c, refer sheet: sheet: https://docs.google.com/spreadsheets/d/1Rl0c0pFwpkKEoTXUP5EMbv3ZgZEMwPsn/edit?pli=1&gid=1653816166#gid=1653816166
+Max batch size ==> 30.49 + B*8.59 <= 80GB ==> B <= 5.76 ==> Max batch size = 5
+
+(d) Model FLOPs utilization (MFU) is defined as the ratio of observed throughput (tokens per second)
+relative to the hardware’s theoretical peak FLOP throughput [Chowdhery et al., 2022]. An
+NVIDIA A100 GPU has a theoretical peak of 19.5 teraFLOP/s for float32 operations. Assuming
+you are able to get 50% MFU, how long would it take to train a GPT-2 XL for 400K steps and a
+batch size of 1024 on a single A100? Following Kaplan et al. [2020] and Hoffmann et al. [2022],
+assume that the backward pass has twice the FLOPs of the forward pass.
+GPT_absolute_flops_per_step = 13568190859904
+expected_throughput = 19.5 * 10**12 * 0.5
+Time_1step = GPT_absolute_flops_per_step / expected_throughput
+Time_400Ksteps = Time_1step * 400000
+Time_400Ksteps_days = Time_400Ksteps / (24 * 60 * 60)
+Time_400Ksteps_days = 6.442635735946818 days
