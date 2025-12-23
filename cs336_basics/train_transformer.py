@@ -176,38 +176,42 @@ class AdamW(torch.optim.Optimizer):
         return loss
 
 class Trainer():
-    def __init__(self, model, scheduler, train_data, val_data, num_iters, batch_size, context_length, device, checkpoint_dir, eval_freq = 1000, save_freq = 1000):
+    def __init__(self, model, **kwargs):
         self.model = model
-        self.scheduler = scheduler
-        self.train_data = train_data
-        self.val_data = val_data
-        self.num_iters = num_iters
-        self.batch_size = batch_size
-        self.context_length = context_length
-        self.device = device
-        self.eval_freq = eval_freq
-        self.save_freq = save_freq
-        self.checkpoint_dir = checkpoint_dir
+        
+        # Training data paths
+        self.train_data = kwargs.get('train_data')
+        self.val_data = kwargs.get('val_data')
+        
+        # Training hyperparameters
+        self.num_iters = kwargs.get('num_iters', 5000)
+        self.batch_size = kwargs.get('batch_size', 32)
+        self.context_length = kwargs.get('context_length', 256)
+        self.device = kwargs.get('device', 'cpu')
+        self.eval_freq = kwargs.get('eval_freq', 1000)
+        self.save_freq = kwargs.get('save_freq', 1000)
+        self.checkpoint_dir = kwargs.get('checkpoint_dir', None)
+        
+        # Learning rate scheduler parameters
+        self.alpha_max = kwargs.get('alpha_max', 1e-3)
+        self.alpha_min = kwargs.get('alpha_min', 1e-4)
+        self.warmup_iters = kwargs.get('warmup_iters', 1000)
+        self.cosine_cycle_iters = kwargs.get('cosine_cycle_iters', 10000)
+        self.max_l2_norm = kwargs.get('max_l2_norm', 1.0)
 
         self.optimizer = AdamW(self.model.parameters(), lr=1e-1)
         self.scheduler = learning_rate_schedule
         self.gc = gradient_clipping
         self.loss_fn = cross_entropy_loss
 
-        # set lr scheduler parameters
-        self.alpha_max = 1e-3
-        self.alpha_min = 1e-4
-        self.warmup_iters = 1000
-        self.cosine_cycle_iters = 10000
-        self.max_l2_norm = 1.0
         self.start_iter = 0
         
-        if checkpoint_dir is not None:
+        if self.checkpoint_dir is not None:
             # get the latest checkpoint
-            checkpoint_dir_path = pathlib.Path(checkpoint_dir)
+            checkpoint_dir_path = pathlib.Path(self.checkpoint_dir)
             checkpoint_files = list(checkpoint_dir_path.glob('checkpoint_*.bin'))
             if checkpoint_files:
-                # load the om;y checkpoint file
+                # load the only checkpoint file
                 only_checkpoint = checkpoint_files[0]
                 self.start_iter = load_checkpoint(only_checkpoint, self.model, self.optimizer)
 
@@ -314,64 +318,81 @@ class Trainer():
 
 
 if __name__ == "__main__":
-    # define model parameters
-    d_model = 512
-    num_heads = 16
-    d_ff = 1344
-    num_layers = 4
-    vocab_size = 10000
-    context_length = 256
+    # Configuration dictionary with all parameters
+    config = {
+        # Model parameters
+        "d_model": 512,
+        "num_heads": 16,
+        "d_ff": 1344,
+        "num_layers": 4,
+        "vocab_size": 10000,
+        "context_length": 256,
+        
+        # Training parameters
+        "batch_size": 32,
+        "num_iters": 5000,
+        "eval_freq": 10,
+        "save_freq": 1000,
+        "device": "cpu",
+        "checkpoint_dir": "./cs336_basics/outputs/TinyStories/checkpoints",
+        
+        # Learning rate scheduler parameters
+        "alpha_max": 1e-3,
+        "alpha_min": 1e-4,
+        "warmup_iters": 1000,
+        "cosine_cycle_iters": 10000,
+        "max_l2_norm": 1.0,
+        
+        # Data paths
+        "train_data": "./cs336_basics/outputs/TinyStories/train_dev_ids.npy",
+        "val_data": "./cs336_basics/outputs/TinyStories/valid_dev_ids.npy",
+        
+        # Tokenizer paths
+        "vocab_filepath": "./cs336_basics/outputs/TinyStories/vocab.pkl",
+        "merges_filepath": "./cs336_basics/outputs/TinyStories/merges.pkl",
+        "special_tokens": ["<|endoftext|>"],
+    }
+    
+    # Compute derived values
+    config["total_tokens_processed"] = config["num_iters"] * config["batch_size"] * config["context_length"]
 
-    batch_size = 32
-    num_iters = 5000
-    eval_freq = 10
-    save_freq = 1000
-    total_tokens_processed = num_iters*batch_size*context_length
-    checkpoint_dir = "./cs336_basics/outputs/TinyStories/checkpoints"
-
+    # Initialize wandb with config
     wandb.init(project="cs336_basics", name="transformer")
-    wandb.config.update({
-        "d_model": d_model,
-        "num_heads": num_heads,
-        "d_ff": d_ff,
-        "num_layers": num_layers,
-        "vocab_size": vocab_size,
-        "context_length": context_length,
-    })
+    wandb.config.update(config)
 
-    device = 'cuda'
+    # Load tokenizer
+    tokenizer = Tokenizer.from_files(
+        config["vocab_filepath"], 
+        config["merges_filepath"], 
+        config["special_tokens"]
+    )
 
-    # load train and validation data for TS
-    train_data = "./cs336_basics/outputs/TinyStories/train_dev_ids.npy"
-    val_data = "./cs336_basics/outputs/TinyStories/valid_dev_ids.npy"
-    # train_data_ids = np.load(train_data)
-    # val_data_ids = np.load(val_data)
-
-    # load tokenizer
-    vocab_filepath = "./cs336_basics/outputs/TinyStories/vocab.pkl"
-    merges_filepath = "./cs336_basics/outputs/TinyStories/merges.pkl"
-    special_tokens = ["<|endoftext|>"]
-    tokenizer = Tokenizer.from_files(vocab_filepath, merges_filepath, special_tokens)
-
-    # load model
-    model = TransformerLM(vocab_size, context_length, d_model, num_heads, d_ff, num_layers)
-    model.to(device)
+    # Load model
+    model = TransformerLM(
+        config["vocab_size"], 
+        config["context_length"], 
+        config["d_model"], 
+        config["num_heads"], 
+        config["d_ff"], 
+        config["num_layers"]
+    )
+    model.to(config["device"])
     
     model = torch.compile(model, backend='eager')
 
     # set torch float32 precision for GPU optimization
-    if device == 'cuda':
+    if config["device"] == 'cuda':
         torch.set_float32_matmul_precision('high')  # Enables TensorFloat32 for faster matmuls
-    trainer = Trainer(model, tokenizer, train_data, val_data, model_args, batch_args, lr_args, device, checkpoint_dir)
+    trainer = Trainer(model, **config)
 
     # load trainer
-    # trainer.train()
+    trainer.train()
 
     # evaluate model
     checkpoint_path = "./cs336_basics/outputs/TinyStories/checkpoints"
     load_checkpoint(checkpoint_path, model, trainer.optimizer)
     prompt = "Once upon a time"
 
-    output = transformer_decoder(model, tokenizer, prompt, device)
+    output = transformer_decoder(model, tokenizer, prompt, config["device"])
     print(output)
 
