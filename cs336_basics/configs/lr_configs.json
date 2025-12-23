@@ -1,0 +1,26 @@
+{
+  "conservative": {
+    "alpha_max": 5e-4,
+    "alpha_min": 5e-6,
+    "warmup_iters": 500,
+    "cosine_cycle_iters": 40000
+  },
+  "balanced": {
+    "alpha_max": 1e-3,
+    "alpha_min": 1e-5,
+    "warmup_iters": 1000,
+    "cosine_cycle_iters": 40000
+  },
+  "aggressive": {
+    "alpha_max": 2e-3,
+    "alpha_min": 2e-5,
+    "warmup_iters": 2000,
+    "cosine_cycle_iters": 40000
+  },
+  "very_aggressive": {
+    "alpha_max": 5e-3,
+    "alpha_min": 1e-5,
+    "warmup_iters": 3000,
+    "cosine_cycle_iters": 40000
+  }
+}
