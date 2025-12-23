@@ -318,6 +318,13 @@ class Trainer():
 
 
 if __name__ == "__main__":
+    with open("./cs336_basics/lr_configs.json", "r") as f:
+        lr_configs = json.load(f)
+    
+    # 'conservative', 'balanced', 'aggressive', 'very_aggressive'
+    selected_strategy = "balanced" 
+    lr_config = lr_configs[selected_strategy]
+    
     # Configuration dictionary with all parameters
     config = {
         # Model parameters
@@ -330,18 +337,10 @@ if __name__ == "__main__":
         
         # Training parameters
         "batch_size": 32,
-        "num_iters": 5000,
-        "eval_freq": 10,
+        "num_iters": 40000,
+        "eval_freq": 100,
         "save_freq": 1000,
-        "device": "cpu",
-        "checkpoint_dir": "./cs336_basics/outputs/TinyStories/checkpoints",
-        
-        # Learning rate scheduler parameters
-        "alpha_max": 1e-3,
-        "alpha_min": 1e-4,
-        "warmup_iters": 1000,
-        "cosine_cycle_iters": 10000,
-        "max_l2_norm": 1.0,
+        "device": "cuda",
         
         # Data paths
         "train_data": "./cs336_basics/outputs/TinyStories/train_dev_ids.npy",
@@ -351,8 +350,16 @@ if __name__ == "__main__":
         "vocab_filepath": "./cs336_basics/outputs/TinyStories/vocab.pkl",
         "merges_filepath": "./cs336_basics/outputs/TinyStories/merges.pkl",
         "special_tokens": ["<|endoftext|>"],
+        
+        "alpha_max": lr_config["alpha_max"],
+        "alpha_min": lr_config["alpha_min"],
+        "warmup_iters": int(lr_config["warmup_iters"]),
+        "cosine_cycle_iters": int(lr_config["cosine_cycle_iters"]),
+        "max_l2_norm": 1.0
     }
-    
+
+    checkpoint_dir = f"./cs336_basics/outputs/TinyStories/checkpoints/checkpoint_batch_{config['batch_size']}_iters_{config['num_iters']}_lr_{config['alpha_max']}_{config['alpha_min']}_{config['warmup_iters']}_cosine_{config['cosine_cycle_iters']}"
+    config["checkpoint_dir"] = checkpoint_dir
     # Compute derived values
     config["total_tokens_processed"] = config["num_iters"] * config["batch_size"] * config["context_length"]
 
@@ -389,8 +396,7 @@ if __name__ == "__main__":
     trainer.train()
 
     # evaluate model
-    checkpoint_path = "./cs336_basics/outputs/TinyStories/checkpoints"
-    load_checkpoint(checkpoint_path, model, trainer.optimizer)
+    load_checkpoint(checkpoint_dir, model, trainer.optimizer)
     prompt = "Once upon a time"
 
     output = transformer_decoder(model, tokenizer, prompt, config["device"])
