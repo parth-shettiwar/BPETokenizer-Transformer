@@ -59,6 +59,8 @@ def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: flo
             if p.grad is not None:
                 p.grad.data = p.grad.data * (max_l2_norm / (l2_norm + eps))
 
+    return l2_norm.item()
+
 def data_loading(dataset: np.ndarray, batch_size: int, context_length: int, device: str = 'cpu'):
     possible_starting_indices = len(dataset) - context_length 
     starting_indices = np.random.randint(0, possible_starting_indices, size=batch_size)
@@ -68,6 +70,18 @@ def data_loading(dataset: np.ndarray, batch_size: int, context_length: int, devi
     data = torch.tensor(dataset[final_indices], device=device).long()
     data_next = torch.tensor(dataset[final_indices+1], device=device).long()
     return (data, data_next)
+
+def data_loading_val(dataset: np.ndarray, batch_size: int, context_length: int, device: str = 'cpu'):
+    current_idx = 0
+    starting_indices = np.arange(0, batch_size, 1)
+    offsets = np.arange(context_length)
+    while current_idx < len(dataset) - context_length - 1:
+        final_indices = starting_indices.reshape(-1, 1) + offsets.reshape(1, -1)
+        data = torch.tensor(dataset[final_indices], device=device).long()
+        data_next = torch.tensor(dataset[final_indices+1], device=device).long()
+        yield (data, data_next)
+        current_idx += batch_size
+        starting_indices += batch_size
 
 def save_checkpoint(model, optimizer, iteration, out):
     # recover model state
@@ -130,7 +144,7 @@ def transformer_decoder(model, tokenizer, prompt, device, temperature = 1.0, max
 
 
 class AdamW(torch.optim.Optimizer):
-    def __init__(self, params, lr=1e-3, betas = (0.9, 0.999), eps=1e-8, weight_decay=0.1):
+    def __init__(self, params, lr=1e-3, betas = (0.9, 0.98), eps=1e-9, weight_decay=0.00):
         if lr < 0:
             raise ValueError(f"Invalid learning rate: {lr}")
         if eps < 0:
@@ -186,6 +200,7 @@ class Trainer():
         # Training hyperparameters
         self.num_iters = kwargs.get('num_iters', 5000)
         self.batch_size = kwargs.get('batch_size', 32)
+        self.val_batch_size = kwargs.get('val_batch_size', 128)
         self.context_length = kwargs.get('context_length', 256)
         self.device = kwargs.get('device', 'cpu')
         self.eval_freq = kwargs.get('eval_freq', 1000)
@@ -199,10 +214,15 @@ class Trainer():
         self.cosine_cycle_iters = kwargs.get('cosine_cycle_iters', 10000)
         self.max_l2_norm = kwargs.get('max_l2_norm', 1.0)
 
-        self.optimizer = AdamW(self.model.parameters(), lr=1e-1)
         self.scheduler = learning_rate_schedule
         self.gc = gradient_clipping
         self.loss_fn = cross_entropy_loss
+
+        # AdamW optimizer parameters
+        self.adamw_weight_decay = kwargs.get('adamw_weight_decay', 0.00)
+        self.adamw_betas = kwargs.get('adamw_betas', (0.9, 0.98))
+        self.adamw_eps = kwargs.get('adamw_eps', 1e-9)
+        self.optimizer = AdamW(self.model.parameters(), lr=1e-1, betas=self.adamw_betas, eps=self.adamw_eps, weight_decay=self.adamw_weight_decay)
 
         self.start_iter = 0
         
@@ -215,14 +235,52 @@ class Trainer():
                 only_checkpoint = checkpoint_files[0]
                 self.start_iter = load_checkpoint(only_checkpoint, self.model, self.optimizer)
 
-
+    def validate(self, val_dataset):
+        self.model.eval()
+        num_eval_batches = 0
+        total_val_loss = 0.0
+        print("number of validation batches: ", (len(val_dataset) - self.context_length - 1) // self.val_batch_size)
+        print("batch size: ", self.val_batch_size)
+        with torch.no_grad():
+            for val_batch, val_batch_next in tqdm(data_loading_val(val_dataset, self.val_batch_size, self.context_length, self.device), desc="Validation"):
+                output = self.model(val_batch)
+                batch_loss = self.loss_fn(output, val_batch_next)
+                total_val_loss += batch_loss.item()
+                num_eval_batches += 1
+                if num_eval_batches >= 30:
+                    break
+            val_loss = total_val_loss / num_eval_batches
+            return val_loss
+    
+    
     def train(self):
         import time
         from collections import defaultdict
         
+        print("=" * 60)
+        print("TRAINING CONFIG")
+        print("=" * 60)
+        print(f"  num_iters: {self.num_iters}")
+        print(f"  batch_size: {self.batch_size}")
+        print(f"  context_length: {self.context_length}")
+        print(f"  device: {self.device}")
+        print(f"  alpha_max: {self.alpha_max}")
+        print(f"  alpha_min: {self.alpha_min}")
+        print(f"  warmup_iters: {self.warmup_iters}")
+        print(f"  cosine_cycle_iters: {self.cosine_cycle_iters}")
+        print(f"  max_l2_norm: {self.max_l2_norm}")
+        print(f"  eval_freq: {self.eval_freq}")
+        print(f"  save_freq: {self.save_freq}")
+        print(f"  adamw_weight_decay: {self.adamw_weight_decay}")
+        print(f"  adamw_betas: {self.adamw_betas}")
+        print(f"  adamw_eps: {self.adamw_eps}")
+        print("=" * 60)
+        
         print("Starting training...")
         train_dataset = np.load(self.train_data, mmap_mode='r')
         val_dataset = np.load(self.val_data, mmap_mode='r')
+        print(f"Train dataset size: {len(train_dataset):,} tokens")
+        print(f"Val dataset size: {len(val_dataset):,} tokens")
         print("Loaded train and validation datasets")
         
         # Profiling accumulators
@@ -258,7 +316,7 @@ class Trainer():
     
             # Gradient clipping
             t0 = time.perf_counter()
-            self.gc(self.model.parameters(), self.max_l2_norm)
+            l2_norm = self.gc(self.model.parameters(), self.max_l2_norm)
             timings['grad_clip'] += time.perf_counter() - t0
             
             # Optimizer step
@@ -296,32 +354,38 @@ class Trainer():
             if iter % self.eval_freq == 0:
                 self.model.eval()
                 with torch.no_grad():
-                # load data
-                    val_data_batch, val_data_next_batch = data_loading(val_dataset, self.batch_size, self.context_length, self.device)
-                    # forward pass
-                    output = self.model(val_data_batch.to())
-                    # backward pass
-                    loss = self.loss_fn(output, val_data_next_batch)
-                    print(f"Validation loss: {loss.item()}")
+                    num_eval_batches = 10  
+                    total_val_loss = 0.0
+                    
+                    for _ in range(num_eval_batches):
+                        val_batch, val_batch_next = data_loading(val_dataset, self.batch_size, self.context_length, self.device)
+                        output = self.model(val_batch)
+                        batch_loss = self.loss_fn(output, val_batch_next)
+                        total_val_loss += batch_loss.item()
+                    
+                    val_loss = total_val_loss / num_eval_batches
+                    print(f"Validation loss: {val_loss:.4f}")
 
                 wandb.log({
-                'val_loss': loss.item(),
-                })
+                'val_loss': val_loss,
+                }, step=iter)
 
                 
             # log training metrics wandb
             wandb.log({
                 'train_loss': loss.item(),
                 'learning_rate': self.optimizer.param_groups[0]['lr'],
-            })
+                'l2_norm': l2_norm,
+            }, step=iter)
             # log validation metrics wandb
 
 
 if __name__ == "__main__":
-    with open("./cs336_basics/lr_configs.json", "r") as f:
+    base_path = "./cs336_basics"
+    with open(f"{base_path}/configs/lr_configs.json", "r") as f:
         lr_configs = json.load(f)
     
-    # 'conservative', 'balanced', 'aggressive', 'very_aggressive'
+    # 'very_conservative','conservative', 'balanced', 'aggressive', 'very_aggressive'
     selected_strategy = "balanced" 
     lr_config = lr_configs[selected_strategy]
     
@@ -337,32 +401,41 @@ if __name__ == "__main__":
         
         # Training parameters
         "batch_size": 32,
-        "num_iters": 40000,
+        "num_iters": 5000,
         "eval_freq": 100,
         "save_freq": 1000,
-        "device": "cuda",
+        "device": "cpu",
+        "val_batch_size": 128,
         
         # Data paths
-        "train_data": "./cs336_basics/outputs/TinyStories/train_dev_ids.npy",
-        "val_data": "./cs336_basics/outputs/TinyStories/valid_dev_ids.npy",
+        "train_data": f"{base_path}/outputs/TinyStories/train_dev_ids.npy",
+        "val_data": f"{base_path}/outputs/TinyStories/valid_dev_ids.npy",
         
         # Tokenizer paths
-        "vocab_filepath": "./cs336_basics/outputs/TinyStories/vocab.pkl",
-        "merges_filepath": "./cs336_basics/outputs/TinyStories/merges.pkl",
+        "vocab_filepath": f"{base_path}/outputs/TinyStories/vocab.pkl",
+        "merges_filepath": f"{base_path}/outputs/TinyStories/merges.pkl",
         "special_tokens": ["<|endoftext|>"],
         
         "alpha_max": lr_config["alpha_max"],
         "alpha_min": lr_config["alpha_min"],
         "warmup_iters": int(lr_config["warmup_iters"]),
         "cosine_cycle_iters": int(lr_config["cosine_cycle_iters"]),
-        "max_l2_norm": 1.0
+        "max_l2_norm": 1.0,
+
+        # AdamW optimizer parameters    
+        "adamw_weight_decay": 0.1,
+        "adamw_betas": (0.9, 0.999),
+        "adamw_eps": 1e-9,
     }
 
-    checkpoint_dir = f"./cs336_basics/outputs/TinyStories/checkpoints/checkpoint_batch_{config['batch_size']}_iters_{config['num_iters']}_lr_{config['alpha_max']}_{config['alpha_min']}_{config['warmup_iters']}_cosine_{config['cosine_cycle_iters']}"
+    checkpoint_dir = f"{base_path}/outputs/TinyStories/checkpoints/checkpoint_batch_{config['batch_size']}_iters_{config['num_iters']}_lr_{config['alpha_max']}_{config['alpha_min']}_{config['warmup_iters']}_cosine_{config['cosine_cycle_iters']}"
     config["checkpoint_dir"] = checkpoint_dir
     # Compute derived values
     config["total_tokens_processed"] = config["num_iters"] * config["batch_size"] * config["context_length"]
 
+    # Debug: verify LR scheduler params
+    print(f"LR Schedule: warmup_iters={config['warmup_iters']}, cosine_cycle_iters={config['cosine_cycle_iters']}, alpha_max={config['alpha_max']}")
+    
     # Initialize wandb with config
     wandb.init(project="cs336_basics", name="transformer")
     wandb.config.update(config)
@@ -386,6 +459,9 @@ if __name__ == "__main__":
     model.to(config["device"])
     
     model = torch.compile(model, backend='eager')
+    # print number of parameters in model
+    print(f"Number of parameters in model: {sum(p.numel() for p in model.parameters())}")
+
 
     # set torch float32 precision for GPU optimization
     if config["device"] == 'cuda':
@@ -395,10 +471,16 @@ if __name__ == "__main__":
     # load trainer
     trainer.train()
 
-    # evaluate model
-    load_checkpoint(checkpoint_dir, model, trainer.optimizer)
-    prompt = "Once upon a time"
+    # # evaluate model
+    # load_checkpoint(checkpoint_dir, model, trainer.optimizer)
+    # prompt = "Once upon a time"
 
-    output = transformer_decoder(model, tokenizer, prompt, config["device"])
-    print(output)
+    # output = transformer_decoder(model, tokenizer, prompt, config["device"])
+    # print(output)
+
+    # compute validation loss
+    # load_checkpoint(checkpoint_dir, model, trainer.optimizer)
+    # val_dataset = np.load(config["val_data"], mmap_mode='r')
+    # val_loss = trainer.validate(val_dataset)
+    # print(f"Validation loss: {val_loss:.4f}")
 
