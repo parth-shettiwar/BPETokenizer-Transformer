@@ -232,9 +232,9 @@ class MultiHeadSelfAttention(torch.nn.Module):
         return output
 
 class TransformerBlock(torch.nn.Module):
-    def __init__(self, d_model: int, num_heads: int, d_ff: int) -> None:
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, theta: float | None = None) -> None:
         super().__init__()
-        self.mha = MultiHeadSelfAttention(d_model, num_heads)
+        self.mha = MultiHeadSelfAttention(d_model, num_heads, theta)
         self.rmsnorm1 = RMSNorm(d_model)
         self.ffn = PositionwiseFeedForward(d_model, d_ff)
         self.rmsnorm2 = RMSNorm(d_model)
@@ -248,10 +248,10 @@ class TransformerBlock(torch.nn.Module):
     
 
 class TransformerLM(torch.nn.Module):
-    def __init__(self, vocab_size: int, context_length: int, d_model: int, num_heads: int, d_ff: int, num_layers: int) -> None:
+    def __init__(self, vocab_size: int, context_length: int, d_model: int, num_heads: int, d_ff: int, num_layers: int, theta: float | None = None) -> None:
         super().__init__()
         self.token_embedding = Embedding(vocab_size, d_model)
-        self.layers = torch.nn.ModuleList([TransformerBlock(d_model, num_heads, d_ff) for _ in range(num_layers)])
+        self.layers = torch.nn.ModuleList([TransformerBlock(d_model, num_heads, d_ff, theta) for _ in range(num_layers)])
         self.rmsnorm = RMSNorm(d_model)
         self.output_linear = Linear(d_model, vocab_size)
 

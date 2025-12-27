@@ -398,6 +398,7 @@ if __name__ == "__main__":
         "num_layers": 4,
         "vocab_size": 10000,
         "context_length": 256,
+        "theta": 10000.0,
         
         # Training parameters
         "batch_size": 32,
@@ -454,7 +455,8 @@ if __name__ == "__main__":
         config["d_model"], 
         config["num_heads"], 
         config["d_ff"], 
-        config["num_layers"]
+        config["num_layers"],
+        theta=config["theta"]
     )
     model.to(config["device"])
     
